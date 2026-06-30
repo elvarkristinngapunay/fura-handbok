@@ -10,10 +10,8 @@
    Hver hnútur hefur líka sínar eigin myndir, bilanaleit og
    varahluti.
 
-   KÓÐAR (hægt að breyta hér):
+   Kóðar og gögn eru geymd í Supabase (sjá supabase-setup.sql).
    ============================================================ */
-const VIEW_CODE = '1234';   // Sláðu inn til að LESA
-const EDIT_CODE = '5678';   // Sláðu inn til að LESA + BREYTA
 
 /* ============================================================
    Sýnishorn af gögnum (verður sótt úr Supabase síðar)
@@ -93,19 +91,34 @@ const SEED = {
 /* ============================================================
    Geymsla (localStorage)
    ============================================================ */
-const DB_KEY = 'fura_handbok_data_v3';
-const UNLOCK_KEY = 'fura_handbok_unlock';
+const SUPA = window.FURA_SUPABASE || {};
+const db = (window.supabase && SUPA.url) ? window.supabase.createClient(SUPA.url, SUPA.key) : null;
 
-function loadData(){
-  try{ const raw = localStorage.getItem(DB_KEY); if(raw) return JSON.parse(raw); }catch(e){}
-  const seed = JSON.parse(JSON.stringify(SEED));
-  localStorage.setItem(DB_KEY, JSON.stringify(seed));
-  return seed;
+const CACHE_KEY  = 'fura_handbok_cache_v1';   // afrit af handbók (hraði + ónettengt lestur)
+const UNLOCK_KEY = 'fura_handbok_unlock_v1';  // { role, code }
+
+let DATA = { tree: [] };
+let MODE = 'locked';      // locked | view | edit
+let UNLOCK_CODE = null;   // kóðinn sem var sleginn inn (notaður við vistun)
+
+function normalize(d){ d = d || {tree:[]}; if(!Array.isArray(d.tree)) d.tree = []; return d; }
+function cacheData(){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DATA)); }catch(e){} }
+function loadCache(){ try{ const r = localStorage.getItem(CACHE_KEY); if(r) return JSON.parse(r); }catch(e){} return null; }
+
+async function fetchHandbook(code){
+  const { data, error } = await db.rpc('get_handbook', { p_code: code });
+  if(error) throw error;
+  return data; // null ef rangur kóði, annars { role, data }
 }
-function saveData(){ localStorage.setItem(DB_KEY, JSON.stringify(DATA)); }
 
-let DATA = loadData();
-let MODE = localStorage.getItem(UNLOCK_KEY) || 'locked'; // locked | view | edit
+async function saveData(){
+  cacheData();                                       // strax staðbundið (öryggi + hraði)
+  if(MODE !== 'edit' || !UNLOCK_CODE || !db) return;
+  try{
+    const { error } = await db.rpc('save_handbook', { p_code: UNLOCK_CODE, p_data: DATA });
+    if(error) throw error;
+  }catch(e){ toast('Vistun mistókst — engin nettenging?'); }
+}
 
 /* ============================================================
    Hjálparföll
@@ -129,8 +142,17 @@ function toast(msg){
   clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('show'), 1600);
 }
 
-/* mynd: File -> lítil JPEG data-URL */
-function compressPhoto(file, maxDim=1600, quality=0.8){
+// velur skrá úr síma/tölvu
+function pickFile(){
+  return new Promise((resolve)=>{
+    const inp = document.createElement('input');
+    inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+    inp.onchange = () => resolve(inp.files && inp.files[0] ? inp.files[0] : null);
+    inp.click();
+  });
+}
+// minnkar mynd í litla JPEG (Blob)
+function compressToBlob(file, maxDim=1600, quality=0.8){
   return new Promise((resolve, reject)=>{
     const img = new Image();
     img.onload = () => {
@@ -139,25 +161,30 @@ function compressPhoto(file, maxDim=1600, quality=0.8){
         if(w >= h){ h = Math.round(h*maxDim/w); w = maxDim; }
         else { w = Math.round(w*maxDim/h); h = maxDim; }
       }
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
+      const c = document.createElement('canvas'); c.width=w; c.height=h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(c.toDataURL('image/jpeg', quality));
+      c.toBlob(b => b ? resolve(b) : reject(new Error('blob')), 'image/jpeg', quality);
     };
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
   });
 }
-function pickPhoto(){
-  return new Promise((resolve)=>{
-    const inp = document.createElement('input');
-    inp.type='file'; inp.accept='image/*'; inp.capture='environment';
-    inp.onchange = async () => {
-      if(!inp.files || !inp.files[0]) return resolve(null);
-      try{ resolve(await compressPhoto(inp.files[0])); } catch{ resolve(null); }
-    };
-    inp.click();
-  });
+// minnkar og hleður upp í Supabase, skilar opinberri vefslóð
+async function uploadPhoto(file){
+  const blob = await compressToBlob(file);
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.jpg`;
+  const { error } = await db.storage.from('photos').upload(name, blob, { contentType:'image/jpeg', upsert:false });
+  if(error) throw error;
+  return db.storage.from('photos').getPublicUrl(name).data.publicUrl;
+}
+// velur -> hleður upp -> skilar vefslóð (eða null)
+async function pickAndUpload(){
+  const file = await pickFile();
+  if(!file) return null;
+  if(!db){ toast('Engin nettenging'); return null; }
+  toast('Hleð upp mynd…');
+  try{ const url = await uploadPhoto(file); toast('Mynd komin ✓'); return url; }
+  catch(e){ toast('Tókst ekki að hlaða upp mynd'); return null; }
 }
 
 function photoBlock(src, cls, phIcon='▲'){
@@ -247,17 +274,28 @@ function renderLock(){
     inp.addEventListener('keydown', (e)=>{ if(e.key === 'Backspace' && !inp.value && i>0) inputs[i-1].focus(); });
   });
 }
-function tryCode(code){
-  if(code === EDIT_CODE){ MODE='edit'; persistUnlock(); go('#/'); render(); toast('Breytingar virkar ✏️'); }
-  else if(code === VIEW_CODE){ MODE='view'; persistUnlock(); go('#/'); render(); }
-  else {
-    $('#lockMsg').textContent = 'Rangur kóði — reyndu aftur';
+async function tryCode(code){
+  const msg = $('#lockMsg');
+  if(!db){ if(msg) msg.textContent = 'Engin tenging við netþjón'; return; }
+  if(msg) msg.textContent = 'Athuga…';
+  let res;
+  try{ res = await fetchHandbook(code); }
+  catch(e){ if(msg) msg.textContent = 'Villa við tengingu — reyndu aftur'; return; }
+  if(!res){
+    if(msg) msg.textContent = 'Rangur kóði — reyndu aftur';
     document.querySelectorAll('#codebox input').forEach(x=>x.value='');
-    document.querySelector('#codebox input').focus();
+    const f = document.querySelector('#codebox input'); if(f) f.focus();
+    return;
   }
+  MODE = res.role; UNLOCK_CODE = code; DATA = normalize(res.data);
+  // ef handbókin er tóm og þú mátt breyta -> settu inn sýnishorn í fyrsta sinn
+  if(MODE === 'edit' && DATA.tree.length === 0){ DATA = normalize(JSON.parse(JSON.stringify(SEED))); await saveData(); }
+  cacheData();
+  localStorage.setItem(UNLOCK_KEY, JSON.stringify({ role:MODE, code }));
+  go('#/'); render();
+  toast(MODE === 'edit' ? 'Breytingar virkar ✏️' : 'Velkomin/n');
 }
-function persistUnlock(){ localStorage.setItem(UNLOCK_KEY, MODE); }
-function lock(){ MODE='locked'; localStorage.removeItem(UNLOCK_KEY); render(); }
+function lock(){ MODE='locked'; UNLOCK_CODE=null; localStorage.removeItem(UNLOCK_KEY); render(); }
 
 /* ============================================================
    Forsíða
@@ -357,10 +395,10 @@ function renderNode(path){
   renderParts(node);
 
   if(isEdit()){
-    $('#heroPhoto').onclick = async ()=>{ const d=await pickPhoto(); if(d){ node.photo=d; saveData(); rerender(); } };
+    $('#heroPhoto').onclick = async ()=>{ const url=await pickAndUpload(); if(url){ node.photo=url; saveData(); rerender(); } };
     $('#renameNode').onclick = ()=>{ const nm=prompt('Nýtt nafn:', node.name); if(nm && nm.trim()){ node.name=nm.trim(); saveData(); rerender(); } };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
-    $('#addAngle').onclick = async ()=>{ const d=await pickPhoto(); node.angles.push({ id:uid(), photo:d||'', label:'', text:'' }); saveData(); rerender(); };
+    $('#addAngle').onclick = async ()=>{ const url=await pickAndUpload(); node.angles.push({ id:uid(), photo:url||'', label:'', text:'' }); saveData(); rerender(); };
     $('#addTrouble').onclick = ()=>{ node.troubleshooting.push({id:uid(),problem:'',fix:''}); saveData(); rerender(); };
     $('#addPart').onclick = ()=>{ node.parts.push({id:uid(),name:'',supplier:'',partno:'',url:'',note:''}); saveData(); rerender(); };
   }
@@ -385,7 +423,7 @@ function renderAngles(node){
     mountEditableText($('.capLabel',el), a.label, 'Hvaða hlið? (t.d. „Framan frá“)', (v)=>{a.label=v;saveData();}, {label:true});
     mountEditableText($('.capText',el), a.text, 'Hvað er að gerast hér? Útskýrðu…', (v)=>{a.text=v;saveData();});
     if(isEdit()){
-      $('[data-act="ph"]',el).onclick = async ()=>{ const d=await pickPhoto(); if(d){a.photo=d;saveData();renderAngles(node);} };
+      $('[data-act="ph"]',el).onclick = async ()=>{ const url=await pickAndUpload(); if(url){a.photo=url;saveData();renderAngles(node);} };
       $('[data-act="del"]',el).onclick = ()=>{ if(confirm('Eyða þessari mynd?')){ node.angles=node.angles.filter(x=>x!==a); saveData(); renderAngles(node);} };
     }
     wrap.appendChild(el);
@@ -523,7 +561,41 @@ $('#lockBtn').onclick = () => { if(confirm('Læsa handbókinni?')) lock(); };
 $('#searchBtn').onclick = () => go('#/leit');
 
 window.addEventListener('hashchange', render);
-render();
+
+// Þegar appið kemur aftur í forgrunn: sækja nýjustu gögn (sér breytingar frá hinum)
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState==='visible' && MODE!=='locked' && UNLOCK_CODE && db){
+    try{
+      const res = await fetchHandbook(UNLOCK_CODE);
+      if(res){
+        DATA = normalize(res.data); cacheData();
+        if(!document.querySelector('textarea.edit, input.edit')) render(); // ekki trufla ef verið er að skrifa
+      }
+    }catch(e){}
+  }
+});
+
+// Ræsing: ef búið var að opna áður, sýna afrit strax og sækja svo nýtt
+async function init(){
+  let unlock = null;
+  try{ unlock = JSON.parse(localStorage.getItem(UNLOCK_KEY) || 'null'); }catch(e){}
+  const cached = loadCache();
+  if(!unlock){ renderLock(); return; }
+
+  MODE = unlock.role; UNLOCK_CODE = unlock.code;
+  if(cached){ DATA = normalize(cached); render(); }   // strax úr afriti (líka ónettengt)
+
+  if(db){
+    try{
+      const res = await fetchHandbook(unlock.code);
+      if(res){ MODE = res.role; DATA = normalize(res.data); cacheData(); render(); return; }
+      else { lock(); return; }                         // kóða breytt -> læsa
+    }catch(e){ if(!cached){ renderLock(); } }           // ónettengt og ekkert afrit
+  } else if(!cached){
+    renderLock();
+  }
+}
+init();
 
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   navigator.serviceWorker.register('service-worker.js').catch(()=>{});
