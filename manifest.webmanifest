@@ -1,0 +1,14 @@
+{
+  "name": "Fura — Handbók véla og tækja",
+  "short_name": "Fura Handbók",
+  "description": "Innri handbók fyrir vélar og tæki hjá Fura Málmendurvinnslu.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f3f1ec",
+  "theme_color": "#1f4d3a",
+  "lang": "is",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
