@@ -355,6 +355,7 @@ function renderNode(path){
         ${isEdit()?`<div class="editrow">
           <button class="editbtn" id="heroPhoto">📷 Aðalmynd</button>
           <button class="editbtn" id="renameNode">✏️ Nafn</button>
+          <button class="delbtn" id="deleteNode">🗑️ Eyða þessu</button>
         </div>`:''}
       </div>
     </div>
@@ -397,6 +398,18 @@ function renderNode(path){
   if(isEdit()){
     $('#heroPhoto').onclick = async ()=>{ const url=await pickAndUpload(); if(url){ node.photo=url; saveData(); rerender(); } };
     $('#renameNode').onclick = ()=>{ const nm=prompt('Nýtt nafn:', node.name); if(nm && nm.trim()){ node.name=nm.trim(); saveData(); rerender(); } };
+    $('#deleteNode').onclick = ()=>{
+      const inni = (node.children && node.children.length)
+        ? `\n\nAthugið: allt sem er inni í þessu eyðist líka (${node.children.length} ${node.children.length===1?'hlutur':'hlutir'}).`
+        : '';
+      if(!confirm(`Eyða „${node.name}“?${inni}\n\nÞetta er ekki hægt að taka til baka.`)) return;
+      const idx = r.parentArr.indexOf(node);
+      if(idx > -1) r.parentArr.splice(idx, 1);
+      saveData();
+      if(path.length > 1) go('#/n/' + path.slice(0, -1).join('/'));  // upp um eitt stig
+      else go('#/');                                                  // efsta stig -> forsíða
+      toast('Eytt');
+    };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
     $('#addAngle').onclick = async ()=>{ const url=await pickAndUpload(); node.angles.push({ id:uid(), photo:url||'', label:'', text:'' }); saveData(); rerender(); };
     $('#addTrouble').onclick = ()=>{ node.troubleshooting.push({id:uid(),problem:'',fix:''}); saveData(); rerender(); };
