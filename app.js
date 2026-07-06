@@ -132,7 +132,7 @@ function linkify(s){ return nl2br(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="
 const isEdit = () => MODE === 'edit';
 
 function emptyNode(name){
-  return { id:uid(), name:(name||'').trim(), photo:'', summary:'', children:[], angles:[], troubleshooting:[], parts:[], notes:'' };
+  return { id:uid(), name:(name||'').trim(), photo:'', summary:'', children:[], notes:'', contacts:[] };
 }
 
 function toast(msg){
@@ -337,12 +337,13 @@ function renderNode(path){
   if(!r){ go('#/'); return; }
   const node = r.node;
   node.children = node.children || [];
+  node.contacts = node.contacts || [];
   const ancestors = r.chain.slice(0, -1);
   const crumbs = ['Forsíða', ...ancestors.map(a=>esc(a.name))].join(' · ');
   const rerender = ()=>renderNode(path);
 
   const childCards = node.children.map(c => cardFor(c, [...path, c.id])).join('');
-  const addChild = isEdit() ? `<button class="card card--add" id="addChild"><span>＋</span>Vél / hlutur hér inni</button>` : '';
+  const addChild = isEdit() ? `<button class="card card--add" id="addChild"><span>＋</span>Bæta við vél</button>` : '';
   const showChildren = node.children.length || isEdit();
 
   app.innerHTML = `
@@ -361,39 +362,27 @@ function renderNode(path){
     </div>
 
     ${showChildren ? `<div class="section">
-      <div class="section__head"><span class="section__icon">📂</span><h2>Vélar og hlutar hér inni</h2></div>
+      <div class="section__head"><span class="section__icon">📂</span><h2>Vélar</h2></div>
       <div class="grid">${childCards || (isEdit()?'':'<p class="empty">Ekkert skráð enn.</p>')}${addChild}</div>
     </div>` : ''}
 
     <div class="section">
-      <div class="section__head"><span class="section__icon">📐</span><h2>Myndir frá öllum hliðum</h2></div>
-      <div id="angles"></div>
-      ${isEdit()?`<button class="addbtn" id="addAngle">＋ Bæta við mynd með skýringu</button>`:''}
-    </div>
-
-    <div class="section">
-      <div class="section__head"><span class="section__icon">🛠️</span><h2>Ef eitthvað fer úrskeiðis</h2></div>
-      <div id="trouble"></div>
-      ${isEdit()?`<button class="addbtn" id="addTrouble">＋ Bæta við vandamáli + lausn</button>`:''}
-    </div>
-
-    <div class="section">
-      <div class="section__head"><span class="section__icon">🧩</span><h2>Varahlutir — hvar á að kaupa</h2></div>
-      <div id="parts"></div>
-      ${isEdit()?`<button class="addbtn" id="addPart">＋ Bæta við varahlut</button>`:''}
-    </div>
-
-    <div class="section">
       <div class="section__head"><span class="section__icon">📝</span><h2>Athugasemdir</h2></div>
-      <div id="notesField"></div>
+      <div id="notesField" class="notecard"></div>
+    </div>
+
+    <div class="section">
+      <div class="section__head"><span class="section__icon">👥</span><h2>Tengiliðir</h2></div>
+      <div id="contacts"></div>
+      ${isEdit()?`<button class="addbtn" id="addContact">＋ Bæta við tengilið</button>`:''}
     </div>`;
 
   mountEditableText($('#summaryField'), node.summary, 'Stutt lýsing…', (v)=>{ node.summary=v; saveData(); });
-  mountEditableText($('#notesField'), node.notes, 'T.d. dagleg umhirða, hreinsun, smurning…', (v)=>{ node.notes=v; saveData(); });
+  const notesHost = $('#notesField');
+  mountEditableText(notesHost, node.notes, 'Skrifaðu athugasemdir…', (v)=>{ node.notes=v; saveData(); });
+  if(!isEdit() && !(node.notes||'').trim()){ notesHost.classList.remove('notecard'); notesHost.innerHTML='<p class="empty">Engar athugasemdir enn.</p>'; }
 
-  renderAngles(node);
-  renderTrouble(node);
-  renderParts(node);
+  renderContacts(node);
 
   if(isEdit()){
     $('#heroPhoto').onclick = async ()=>{ const url=await pickAndUpload(); if(url){ node.photo=url; saveData(); rerender(); } };
@@ -411,78 +400,31 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
-    $('#addAngle').onclick = async ()=>{ const url=await pickAndUpload(); node.angles.push({ id:uid(), photo:url||'', label:'', text:'' }); saveData(); rerender(); };
-    $('#addTrouble').onclick = ()=>{ node.troubleshooting.push({id:uid(),problem:'',fix:''}); saveData(); rerender(); };
-    $('#addPart').onclick = ()=>{ node.parts.push({id:uid(),name:'',supplier:'',partno:'',url:'',note:''}); saveData(); rerender(); };
+    $('#addContact').onclick = ()=>{ node.contacts.push({id:uid(),name:'',phone:'',note:''}); saveData(); rerender(); };
   }
 }
 
-function renderAngles(node){
-  const wrap = $('#angles');
-  if(!node.angles.length && !isEdit()){ wrap.innerHTML = '<p class="empty">Engar myndir komnar enn.</p>'; return; }
-  wrap.innerHTML = '';
-  node.angles.forEach(a=>{
-    const el = document.createElement('div'); el.className = 'angle';
-    el.innerHTML = `
-      ${photoBlock(a.photo,'angle__photo','📐')}
-      <div class="angle__cap">
-        <div class="capLabel"></div>
-        <div class="capText"></div>
-        ${isEdit()?`<div class="editrow">
-          <button class="editbtn" data-act="ph">📷 Skipta um mynd</button>
-          <button class="delbtn" data-act="del">✕ Eyða mynd</button>
-        </div>`:''}
-      </div>`;
-    mountEditableText($('.capLabel',el), a.label, 'Hvaða hlið? (t.d. „Framan frá“)', (v)=>{a.label=v;saveData();}, {label:true});
-    mountEditableText($('.capText',el), a.text, 'Hvað er að gerast hér? Útskýrðu…', (v)=>{a.text=v;saveData();});
-    if(isEdit()){
-      $('[data-act="ph"]',el).onclick = async ()=>{ const url=await pickAndUpload(); if(url){a.photo=url;saveData();renderAngles(node);} };
-      $('[data-act="del"]',el).onclick = ()=>{ if(confirm('Eyða þessari mynd?')){ node.angles=node.angles.filter(x=>x!==a); saveData(); renderAngles(node);} };
-    }
-    wrap.appendChild(el);
-  });
-}
-
-function renderTrouble(node){
-  const wrap = $('#trouble');
-  if(!node.troubleshooting.length && !isEdit()){ wrap.innerHTML='<p class="empty">Ekkert skráð enn.</p>'; return; }
+function renderContacts(node){
+  const wrap = $('#contacts');
+  node.contacts = node.contacts || [];
+  if(!node.contacts.length && !isEdit()){ wrap.innerHTML='<p class="empty">Engir tengiliðir skráðir enn.</p>'; return; }
   wrap.innerHTML='';
-  node.troubleshooting.forEach(t=>{
-    const el = document.createElement('div'); el.className='row';
-    el.innerHTML = `<div class="tQ"></div><div class="tA"></div>
-      ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða</button></div>`:''}`;
-    mountEditableText($('.tQ',el), t.problem, 'Vandamál (t.d. „Vélin fer ekki í gang“)', (v)=>{t.problem=v;saveData();}, {strong:true});
-    mountEditableText($('.tA',el), t.fix, 'Hvernig á að laga það?', (v)=>{t.fix=v;saveData();});
-    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða?')){ node.troubleshooting=node.troubleshooting.filter(x=>x!==t); saveData(); renderTrouble(node);} };
-    wrap.appendChild(el);
-  });
-}
-
-function renderParts(node){
-  const wrap = $('#parts');
-  if(!node.parts.length && !isEdit()){ wrap.innerHTML='<p class="empty">Engir varahlutir skráðir enn.</p>'; return; }
-  wrap.innerHTML='';
-  node.parts.forEach(p=>{
+  node.contacts.forEach(c=>{
     const el=document.createElement('div'); el.className='row';
-    el.innerHTML=`<div class="pName"></div><div class="pMeta"></div>
+    el.innerHTML=`<div class="cName"></div><div class="cMeta"></div>
       ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða</button></div>`:''}`;
-    mountEditableText($('.pName',el), p.name, 'Heiti varahlutar', (v)=>{p.name=v;saveData();}, {strong:true});
+    mountEditableText($('.cName',el), c.name, 'Nafn tengiliðar', (v)=>{c.name=v;saveData();}, {strong:true});
     if(isEdit()){
-      const meta = $('.pMeta',el); meta.innerHTML='';
-      meta.appendChild(fieldLine('Söluaðili', p.supplier, 'T.d. Olís, Vélaver…', (v)=>{p.supplier=v;saveData();}));
-      meta.appendChild(fieldLine('Varahlutanúmer', p.partno, '(ef til)', (v)=>{p.partno=v;saveData();}));
-      meta.appendChild(fieldLine('Vefslóð', p.url, 'https://…', (v)=>{p.url=v;saveData();}));
-      meta.appendChild(fieldLine('Athugasemd', p.note, 'T.d. afgreiðslutími', (v)=>{p.note=v;saveData();}));
+      const meta = $('.cMeta',el); meta.innerHTML='';
+      meta.appendChild(fieldLine('Símanúmer', c.phone, 'T.d. 555 1234', (v)=>{c.phone=v;saveData();}));
+      meta.appendChild(fieldLine('Hvað gerir tengiliðurinn?', c.note, 'T.d. sér um viðgerðir á pressunni', (v)=>{c.note=v;saveData();}));
     } else {
-      const bits=[];
-      if(p.supplier) bits.push(`Söluaðili: <strong>${esc(p.supplier)}</strong>`);
-      if(p.partno) bits.push(`Nr: ${esc(p.partno)}`);
-      let html = bits.join(' · ');
-      if(p.note) html += `<div class="meta">${esc(p.note)}</div>`;
-      if(p.url) html += `<div class="meta"><a href="${esc(p.url)}" target="_blank" rel="noopener">Opna vefsíðu →</a></div>`;
-      $('.pMeta',el).innerHTML = html || '<span class="meta">Engar upplýsingar enn.</span>';
+      let html='';
+      if(c.phone) html += `<div class="meta">📞 <a href="tel:${esc((c.phone||'').replace(/\s+/g,''))}">${esc(c.phone)}</a></div>`;
+      if(c.note) html += `<div class="meta">${esc(c.note)}</div>`;
+      $('.cMeta',el).innerHTML = html || '<span class="meta">Engar upplýsingar enn.</span>';
     }
-    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða?')){ node.parts=node.parts.filter(x=>x!==p); saveData(); renderParts(node);} };
+    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða tengilið?')){ node.contacts=node.contacts.filter(x=>x!==c); saveData(); renderContacts(node);} };
     wrap.appendChild(el);
   });
 }
@@ -504,13 +446,19 @@ function renderSearch(){
     <input class="searchinput" id="searchInput" placeholder="T.d. pressa, tætari, belti…" autocomplete="off">
     <div id="searchResults"></div>`;
   const inp = $('#searchInput'); inp.focus();
-  const all = flatten();
+  const all = flatten();  // öll stig trésins, sama hversu djúpt
+  // allur texti hnútsins settur saman (nafn, lýsing, athugasemdir, tengiliðir)
+  const nodeText = (n)=>{
+    let s = `${n.name||''} ${n.summary||''} ${n.notes||''}`;
+    (n.contacts||[]).forEach(c=>{ s += ` ${c.name||''} ${c.note||''} ${c.phone||''}`; });
+    return s.toLowerCase();
+  };
   function run(){
     const q = inp.value.trim().toLowerCase();
     const out = $('#searchResults');
     if(!q){ out.innerHTML = '<p class="empty">Byrjaðu að skrifa…</p>'; return; }
-    const res = all.filter(x =>
-      x.node.name.toLowerCase().includes(q) || (x.node.summary||'').toLowerCase().includes(q));
+    const terms = q.split(/\s+/).filter(Boolean);
+    const res = all.filter(x => { const t = nodeText(x.node); return terms.every(w => t.includes(w)); });
     if(!res.length){ out.innerHTML = '<p class="empty">Ekkert fannst.</p>'; return; }
     out.innerHTML = res.map(x => `
       <a class="result" href="#/n/${x.path.join('/')}">
