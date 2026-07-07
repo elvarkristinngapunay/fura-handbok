@@ -142,11 +142,12 @@ function toast(msg){
   clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('show'), 1600);
 }
 
-// velur skrá úr síma/tölvu
+// velur skrá úr síma/tölvu (myndavél, myndasafn, Google Drive, iCloud, Files …)
+// EKKI setja `capture` — það þvingar myndavélina og felur hina valkostina.
 function pickFile(){
   return new Promise((resolve)=>{
     const inp = document.createElement('input');
-    inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+    inp.type='file'; inp.accept='image/*';
     inp.onchange = () => resolve(inp.files && inp.files[0] ? inp.files[0] : null);
     inp.click();
   });

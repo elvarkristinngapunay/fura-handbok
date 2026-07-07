@@ -1,5 +1,5 @@
 // Fura Handbók — offline cache (virkar þegar appið er hýst á netinu / https)
-const CACHE = 'fura-handbok-v1';
+const CACHE = 'fura-handbok-v2';
 const SHELL = [
   './',
   './index.html',
@@ -22,18 +22,21 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Stale-while-revalidate: sýna úr skyndiminni strax, sækja nýtt í bakgrunni.
+// Network-first: sækja alltaf nýjustu útgáfu þegar net er til staðar,
+// en falla aftur á skyndiminni (ónettengt). Þannig fá allir uppfærslur strax.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(req);
-      const network = fetch(req).then((res) => {
+      try {
+        const res = await fetch(req);
         if (res && res.status === 200 && res.type === 'basic') cache.put(req, res.clone());
         return res;
-      }).catch(() => cached);
-      return cached || network;
+      } catch (err) {
+        const cached = await cache.match(req);
+        return cached || Response.error();
+      }
     })
   );
 });
