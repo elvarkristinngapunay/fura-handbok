@@ -306,18 +306,21 @@ function renderHome(){
   app.innerHTML = `
     <div class="page-head">
       <h1>Fura handbók</h1>
-      <p>Veldu stað eða vél — eða leitaðu með 🔍 efst.</p>
+      <p>Veldu stað eða vél — eða leitaðu efst.</p>
     </div>
     <div class="grid">${cards}${add}</div>`;
   if(isEdit()) $('#addTop').onclick = ()=>addChildTo(DATA.tree, renderHome);
 }
 
 function cardFor(n, path){
+  const kids = (n.children && n.children.length) || 0;
+  const branch = kids > 0;
   return `
-    <a class="card" href="#/n/${path.join('/')}">
+    <a class="card ${branch?'card--branch':'card--leaf'}" href="#/n/${path.join('/')}">
       ${photoBlock(n.photo,'card__photo','⚙')}
       <div class="card__body">
         <div class="card__title">${esc(n.name)}</div>
+        ${branch?`<div class="card__more">${kids} ${kids===1?'vél inni':'vélar inni'} ›</div>`:''}
       </div>
     </a>`;
 }
@@ -364,7 +367,7 @@ function renderNode(path){
     ${showChildren ? `<div class="section">
       <div class="section__head"><span class="section__icon">📂</span><h2>Vélar</h2></div>
       <div class="grid">${childCards || (isEdit()?'':'<p class="empty">Ekkert skráð enn.</p>')}${addChild}</div>
-    </div>` : ''}
+    </div>` : `<div class="leaf-note">Engar fleiri vélar hér inni — allar upplýsingar eru á þessari síðu.</div>`}
 
     <div class="section">
       <div class="section__head"><span class="section__icon">📝</span><h2>Athugasemdir</h2></div>
