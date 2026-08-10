@@ -101,7 +101,33 @@ let DATA = { tree: [] };
 let MODE = 'locked';      // locked | view | edit
 let UNLOCK_CODE = null;   // kóðinn sem var sleginn inn (notaður við vistun)
 
-function normalize(d){ d = d || {tree:[]}; if(!Array.isArray(d.tree)) d.tree = []; return d; }
+function normalize(d){
+  d = d || {tree:[]};
+  if(!Array.isArray(d.tree)) d.tree = [];
+  if(!Array.isArray(d.people)) d.people = [];   // vistuð tengiliðaskrá (ein manneskja = eitt spjald)
+  migrateContacts(d.tree, d.people);
+  return d;
+}
+// Færir gamla tengiliði ({name,phone,note} beint á tæki) yfir í nýja sniðið:
+// sameiginleg manneskja í d.people + tilvísun {personId, help} á tækinu.
+function migrateContacts(nodes, people){
+  for(const n of nodes){
+    if(Array.isArray(n.contacts)){
+      n.contacts = n.contacts.map(c=>{
+        if(!c) return null;
+        if(c.personId) return { id:c.id||uid(), personId:c.personId, help:c.help||'' }; // þegar nýtt snið
+        const name=(c.name||'').trim(), phone=(c.phone||'').trim(), note=(c.note||'').trim();
+        if(!name && !phone && !note) return null;                                        // tómt -> sleppa
+        let person = name && people.find(p=>(p.name||'').trim().toLowerCase()===name.toLowerCase());
+        if(!person){ person={ id:uid(), name, phone, about:'' }; people.push(person); }
+        else if(!person.phone && phone){ person.phone = phone; }
+        return { id:uid(), personId:person.id, help:note };                              // gamla "note" = hjálp á þessu tæki
+      }).filter(Boolean);
+    } else n.contacts = [];
+    if(Array.isArray(n.children) && n.children.length) migrateContacts(n.children, people);
+  }
+}
+function getPerson(id){ return (DATA.people||[]).find(p=>p.id===id); }
 function cacheData(){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DATA)); }catch(e){} }
 function loadCache(){ try{ const r = localStorage.getItem(CACHE_KEY); if(r) return JSON.parse(r); }catch(e){} return null; }
 
@@ -404,31 +430,82 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
-    $('#addContact').onclick = ()=>{ node.contacts.push({id:uid(),name:'',phone:'',note:''}); saveData(); rerender(); };
+    $('#addContact').onclick = ()=> chooseContact(node, (personId)=>{
+      node.contacts.push({ id:uid(), personId, help:'' });
+      saveData(); rerender();
+    });
   }
+}
+
+// Valmynd: velja úr vistuðum tengiliðum eða búa til nýjan. Skilar personId í done().
+function chooseContact(node, done){
+  const attached = new Set((node.contacts||[]).map(c=>c.personId));
+  const people = (DATA.people||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+  const overlay = document.createElement('div'); overlay.className='modal';
+  overlay.innerHTML = `
+    <div class="modal__box">
+      <div class="modal__title">Bæta við tengilið</div>
+      <div class="modal__hint">Veldu vistaðan tengilið eða búðu til nýjan. Nafn, símanúmer og lýsing vistast og nýtast á öllum tækjum.</div>
+      <div class="modal__list">
+        ${people.length ? people.map(p=>`
+          <button class="modal__item" data-id="${p.id}" ${attached.has(p.id)?'disabled':''}>
+            <span class="modal__name">${esc(p.name||'(nafnlaus)')}</span>
+            <span class="modal__meta">${esc(p.phone||'')}${p.about?(p.phone?' · ':'')+esc(p.about):''}${attached.has(p.id)?' — þegar á þessu tæki':''}</span>
+          </button>`).join('') : '<p class="empty">Engir vistaðir tengiliðir enn.</p>'}
+      </div>
+      <button class="addbtn" data-act="new">＋ Nýr tengiliður</button>
+      <button class="editbtn modal__cancel" data-act="cancel">Hætta við</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = ()=>overlay.remove();
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelectorAll('.modal__item').forEach(btn=>{
+    if(btn.disabled) return;
+    btn.onclick = ()=>{ close(); done(btn.dataset.id); };
+  });
+  overlay.querySelector('[data-act="new"]').onclick = ()=>{
+    const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()){ return; }
+    const phone = (prompt('Símanúmer (má sleppa):')||'').trim();
+    const person = { id:uid(), name:name.trim(), phone, about:'' };
+    DATA.people.push(person); close(); done(person.id);
+  };
+  overlay.querySelector('[data-act="cancel"]').onclick = close;
 }
 
 function renderContacts(node){
   const wrap = $('#contacts');
-  node.contacts = node.contacts || [];
+  node.contacts = (node.contacts || []).filter(c=> getPerson(c.personId)); // sleppa tilvísunum án manneskju
   if(!node.contacts.length && !isEdit()){ wrap.innerHTML='<p class="empty">Engir tengiliðir skráðir enn.</p>'; return; }
   wrap.innerHTML='';
   node.contacts.forEach(c=>{
+    const p = getPerson(c.personId);
     const el=document.createElement('div'); el.className='row';
-    el.innerHTML=`<div class="cName"></div><div class="cMeta"></div>
-      ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða</button></div>`:''}`;
-    mountEditableText($('.cName',el), c.name, 'Nafn tengiliðar', (v)=>{c.name=v;saveData();}, {strong:true});
+    el.innerHTML=`
+      <div class="cName"></div>
+      <div class="cShared"></div>
+      <div class="cHelpWrap"><div class="fieldlabel">Hjálpar við þetta tæki</div><div class="cHelp"></div></div>
+      ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Fjarlægja af þessu tæki</button></div>`:''}`;
     if(isEdit()){
-      const meta = $('.cMeta',el); meta.innerHTML='';
-      meta.appendChild(fieldLine('Símanúmer', c.phone, 'T.d. 555 1234', (v)=>{c.phone=v;saveData();}));
-      meta.appendChild(fieldLine('Hvað gerir tengiliðurinn?', c.note, 'T.d. sér um viðgerðir á pressunni', (v)=>{c.note=v;saveData();}));
+      // Nafn / sími / um viðkomandi -> uppfærir sameiginlegu manneskjuna (sama alls staðar)
+      mountEditableText($('.cName',el), p.name, 'Nafn tengiliðar', (v)=>{p.name=v;saveData();}, {strong:true});
+      const sh = $('.cShared',el); sh.innerHTML='';
+      sh.appendChild(fieldLine('Símanúmer (sama alls staðar)', p.phone, 'T.d. 555 1234', (v)=>{p.phone=v;saveData();}));
+      sh.appendChild(fieldLine('Um viðkomandi (sama alls staðar)', p.about, 'Hver er þetta? T.d. rafvirki hjá Rafal', (v)=>{p.about=v;saveData();}));
+      mountEditableText($('.cHelp',el), c.help, 'T.d. sér um viðgerðir á þessari vél', (v)=>{c.help=v;saveData();});
     } else {
-      let html='';
-      if(c.phone) html += `<div class="meta">📞 <a href="tel:${esc((c.phone||'').replace(/\s+/g,''))}">${esc(c.phone)}</a></div>`;
-      if(c.note) html += `<div class="meta">${esc(c.note)}</div>`;
-      $('.cMeta',el).innerHTML = html || '<span class="meta">Engar upplýsingar enn.</span>';
+      $('.cName',el).innerHTML = `<div class="row__q">${esc(p.name||'')}</div>`;
+      let sh='';
+      if(p.phone) sh += `<div class="meta">📞 <a href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">${esc(p.phone)}</a></div>`;
+      if(p.about) sh += `<div class="meta">${esc(p.about)}</div>`;
+      $('.cShared',el).innerHTML = sh;
+      if(c.help){ $('.cHelp',el).innerHTML = nl2br(c.help); }
+      else { $('.cHelpWrap',el).style.display='none'; }
     }
-    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða tengilið?')){ node.contacts=node.contacts.filter(x=>x!==c); saveData(); renderContacts(node);} };
+    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{
+      if(confirm(`Fjarlægja ${p.name||'tengilið'} af þessu tæki?\n\n(Tengiliðurinn sjálfur eyðist ekki — hann er áfram vistaður og á öðrum tækjum.)`)){
+        node.contacts=node.contacts.filter(x=>x!==c); saveData(); renderContacts(node);
+      }
+    };
     wrap.appendChild(el);
   });
 }
