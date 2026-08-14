@@ -258,6 +258,7 @@ function render(){
   setChrome(true);
   const p = parseHash();
   if(p[0] === 'leit'){ renderSearch(); }
+  else if(p[0] === 'simaskra'){ renderPhonebook(); }
   else if(p[0] === 'n'){ renderNode(p.slice(1)); }
   else { renderHome(); }
   window.scrollTo(0,0);
@@ -335,6 +336,11 @@ function renderHome(){
       <h1>Fura handbók</h1>
       <p>Veldu stað eða vél — eða leitaðu efst.</p>
     </div>
+    <a class="pb-entry" href="#/simaskra">
+      <span class="pb-entry__icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
+      <span class="pb-entry__body"><strong>Símaskráin</strong><span>Allir tengiliðir og símanúmer</span></span>
+      <span class="pb-entry__arrow">›</span>
+    </a>
     <div class="grid">${cards}${add}</div>`;
   if(isEdit()) $('#addTop').onclick = ()=>addChildTo(DATA.tree, renderHome);
 }
@@ -531,7 +537,10 @@ function renderSearch(){
   // allur texti hnútsins settur saman (nafn, lýsing, athugasemdir, tengiliðir)
   const nodeText = (n)=>{
     let s = `${n.name||''} ${n.summary||''} ${n.notes||''}`;
-    (n.contacts||[]).forEach(c=>{ s += ` ${c.name||''} ${c.note||''} ${c.phone||''}`; });
+    (n.contacts||[]).forEach(c=>{
+      const p = getPerson(c.personId) || {};
+      s += ` ${p.name||''} ${p.about||''} ${p.phone||''} ${c.help||''}`;
+    });
     return s.toLowerCase();
   };
   function run(){
@@ -549,6 +558,82 @@ function renderSearch(){
   }
   inp.addEventListener('input', run);
   run();
+}
+
+/* ============================================================
+   Símaskráin — allir tengiliðir á einum stað
+   ============================================================ */
+// öll tæki sem tiltekin manneskja er skráð fyrir (nafn + slóð)
+function personMachines(personId){
+  const out=[];
+  (function walk(nodes, path){
+    for(const n of nodes){
+      const p=[...path, n.id];
+      if((n.contacts||[]).some(c=>c.personId===personId)) out.push({ name:n.name, path:p });
+      if(n.children && n.children.length) walk(n.children, p);
+    }
+  })(DATA.tree, []);
+  return out;
+}
+
+function renderPhonebook(){
+  DATA.people = DATA.people || [];
+  const people = DATA.people.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+  app.innerHTML = `
+    <div class="crumbs">Forsíða</div>
+    <div class="page-head"><h1>Símaskráin</h1><p>Allir tengiliðir — smelltu á númer til að hringja.</p></div>
+    <div id="pbList"></div>
+    ${isEdit()?`<button class="addbtn" id="pbAdd">＋ Nýr tengiliður í símaskrá</button>`:''}`;
+  const list = $('#pbList');
+  if(!people.length){ list.innerHTML = '<p class="empty">Engir tengiliðir enn.</p>'; }
+
+  people.forEach(p=>{
+    const machines = personMachines(p.id);
+    const el = document.createElement('div'); el.className='pbcard';
+    el.innerHTML = `
+      <div class="pbName"></div>
+      <div class="pbPhone"></div>
+      <div class="pbAbout"></div>
+      <div class="pbMachines"></div>
+      ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða úr símaskrá</button></div>`:''}`;
+
+    if(isEdit()){
+      mountEditableText($('.pbName',el), p.name, 'Nafn', (v)=>{p.name=v;saveData();}, {strong:true});
+      $('.pbPhone',el).appendChild(fieldLine('Símanúmer', p.phone, 'T.d. 555 1234', (v)=>{p.phone=v;saveData();}));
+      $('.pbAbout',el).appendChild(fieldLine('Um viðkomandi', p.about, 'Hver er þetta? T.d. rafvirki hjá Rafal', (v)=>{p.about=v;saveData();}));
+    } else {
+      $('.pbName',el).innerHTML = `<div class="pbName__t">${esc(p.name||'(nafnlaus)')}</div>`;
+      $('.pbPhone',el).innerHTML = p.phone
+        ? `<a class="pbCall" href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">📞 ${esc(p.phone)}</a>`
+        : `<span class="meta">Ekkert símanúmer skráð</span>`;
+      $('.pbAbout',el).innerHTML = p.about ? `<div class="meta">${esc(p.about)}</div>` : '';
+    }
+
+    const mWrap = $('.pbMachines',el);
+    if(machines.length){
+      mWrap.innerHTML = `<div class="pbMachines__label">Skráður fyrir</div>` +
+        machines.map(m=>`<a class="pbchip" href="#/n/${m.path.join('/')}">${esc(m.name)}</a>`).join('');
+    } else {
+      mWrap.innerHTML = `<div class="pbMachines__none">Ekki skráður fyrir neitt sérstakt tæki</div>`;
+    }
+
+    if(isEdit()) $('[data-act="del"]',el).onclick = ()=>{
+      const warn = machines.length ? `\n\nHann verður líka fjarlægður af ${machines.length} ${machines.length===1?'tæki':'tækjum'}.` : '';
+      if(confirm(`Eyða ${p.name||'þessum tengilið'} úr símaskránni?${warn}`)){
+        (function walk(nodes){ for(const n of nodes){ if(Array.isArray(n.contacts)) n.contacts = n.contacts.filter(c=>c.personId!==p.id); if(n.children) walk(n.children); } })(DATA.tree);
+        DATA.people = DATA.people.filter(x=>x!==p);
+        saveData(); renderPhonebook();
+      }
+    };
+    list.appendChild(el);
+  });
+
+  if(isEdit()) $('#pbAdd').onclick = ()=>{
+    const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()) return;
+    const phone = (prompt('Símanúmer (má sleppa):')||'').trim();
+    DATA.people.push({ id:uid(), name:name.trim(), phone, about:'' });
+    saveData(); renderPhonebook();
+  };
 }
 
 /* ============================================================

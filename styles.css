@@ -64,6 +64,44 @@ button{font-family:inherit}
 .page-head p{margin:0;color:var(--muted)}
 .crumbs{font-size:13px;color:var(--muted);margin:0 2px 10px}
 
+/* ---------- Símaskrá: forsíðu-hnappur ---------- */
+.pb-entry{
+  display:flex;align-items:center;gap:14px;
+  background:var(--green);color:#fff;text-decoration:none;
+  border-radius:var(--radius);padding:15px 18px;margin-bottom:16px;
+  box-shadow:var(--shadow);
+}
+.pb-entry:active{background:var(--green-d)}
+.pb-entry__icon{color:var(--amber);display:flex;align-items:center}
+.pb-entry__body{flex:1;display:flex;flex-direction:column;line-height:1.3}
+.pb-entry__body strong{font-size:17px;letter-spacing:.3px}
+.pb-entry__body span{font-size:13px;opacity:.85}
+.pb-entry__arrow{font-size:24px;opacity:.7}
+
+/* ---------- Símaskrá: spjöld ---------- */
+.pbcard{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);
+}
+.pbName__t{font-weight:800;font-size:17px}
+.pbCall{
+  display:inline-flex;align-items:center;gap:6px;margin-top:3px;
+  color:var(--green);font-weight:700;font-size:16px;text-decoration:none;
+}
+.pbCall:active{opacity:.7}
+.pbMachines{margin-top:10px}
+.pbMachines__label{
+  font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--muted);font-weight:700;margin-bottom:6px;
+}
+.pbMachines__none{font-size:13px;color:var(--muted);font-style:italic;margin-top:8px}
+.pbchip{
+  display:inline-block;background:#eef3ef;color:var(--green);
+  border:1px solid var(--line);border-radius:999px;padding:4px 11px;
+  font-size:13px;font-weight:600;text-decoration:none;margin:0 6px 6px 0;
+}
+.pbchip:active{background:#e2ebe4}
+
 /* ---------- Card grid (rooms / machines) ---------- */
 .grid{
   display:grid;gap:14px;
