@@ -672,14 +672,28 @@ function mountEditableText(host, value, placeholder, onSave, opts={}){
     if(opts.single) input.type='text';
     input.placeholder = placeholder;
     const bar = document.createElement('div'); bar.className='editrow';
-    const save=document.createElement('button'); save.className='editbtn'; save.textContent='✓ Vista';
     const cancel=document.createElement('button'); cancel.className='editbtn'; cancel.textContent='Hætta við';
-    bar.append(save,cancel);
-    editor.append(input,bar);
+    const hint=document.createElement('span'); hint.className='edithint';
+    hint.textContent = opts.single ? 'Enter vistar' : 'Enter vistar · Shift+Enter = ný lína';
+    bar.append(cancel, hint);
+    editor.append(input, bar);
     host.replaceChild(editor, show);
     input.focus();
-    save.onclick = () => { value = input.value; onSave(value); fill(); host.replaceChild(show, editor); toast('Vistað ✓'); };
-    cancel.onclick = () => { host.replaceChild(show, editor); };
+
+    let closed = false, cancelling = false;
+    const commit = () => { if(closed) return; closed = true; value = input.value; onSave(value); fill(); host.replaceChild(show, editor); toast('Vistað ✓'); };
+    const abort  = () => { if(closed) return; closed = true; host.replaceChild(show, editor); };
+
+    // Enter vistar (Shift+Enter = ný lína í textarea). Esc hættir við.
+    input.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
+      else if(e.key === 'Escape'){ e.preventDefault(); cancelling = true; abort(); }
+    });
+    // Að smella út úr reitnum vistar líka
+    input.addEventListener('blur', () => { setTimeout(() => { cancelling ? abort() : commit(); }, 0); });
+    // Hætta við án þess að vista (mousedown kemur á undan blur)
+    cancel.addEventListener('mousedown', (e) => { e.preventDefault(); cancelling = true; });
+    cancel.addEventListener('click', () => abort());
   };
 }
 
