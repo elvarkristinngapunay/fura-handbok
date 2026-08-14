@@ -501,10 +501,15 @@ function renderContacts(node){
       mountEditableText($('.cHelp',el), c.help, 'T.d. sér um viðgerðir á þessari vél', (v)=>{c.help=v;saveData();});
     } else {
       $('.cName',el).innerHTML = `<div class="row__q">${esc(p.name||'')}</div>`;
-      let sh='';
-      if(p.phone) sh += `<div class="meta">📞 <a href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">${esc(p.phone)}</a></div>`;
-      if(p.about) sh += `<div class="meta">${esc(p.about)}</div>`;
-      $('.cShared',el).innerHTML = sh;
+      $('.cShared',el).innerHTML = p.phone
+        ? `<div class="meta">📞 <a href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">${esc(p.phone)}</a></div>`
+        : '';
+      // #3 Um viðkomandi — með merkimiða (aðeins ef fyllt)
+      if(p.about){
+        const ab=document.createElement('div'); ab.className='cInfo';
+        ab.innerHTML = `<div class="fieldlabel">Um viðkomandi</div><div class="meta">${esc(p.about)}</div>`;
+        $('.cShared',el).after(ab);
+      }
       if(c.help){ $('.cHelp',el).innerHTML = nl2br(c.help); }
       else { $('.cHelpWrap',el).style.display='none'; }
     }
