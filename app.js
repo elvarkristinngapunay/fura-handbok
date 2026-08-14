@@ -472,7 +472,8 @@ function chooseContact(node, done){
   overlay.querySelector('[data-act="new"]').onclick = ()=>{
     const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()){ return; }
     const phone = (prompt('Símanúmer (má sleppa):')||'').trim();
-    const person = { id:uid(), name:name.trim(), phone, about:'' };
+    const about = (prompt('Um viðkomandi — hver er þetta? (má sleppa):')||'').trim();
+    const person = { id:uid(), name:name.trim(), phone, about };
     DATA.people.push(person); close(); done(person.id);
   };
   overlay.querySelector('[data-act="cancel"]').onclick = close;
@@ -631,7 +632,8 @@ function renderPhonebook(){
   if(isEdit()) $('#pbAdd').onclick = ()=>{
     const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()) return;
     const phone = (prompt('Símanúmer (má sleppa):')||'').trim();
-    DATA.people.push({ id:uid(), name:name.trim(), phone, about:'' });
+    const about = (prompt('Um viðkomandi — hver er þetta? (má sleppa):')||'').trim();
+    DATA.people.push({ id:uid(), name:name.trim(), phone, about });
     saveData(); renderPhonebook();
   };
 }
